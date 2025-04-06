@@ -10,6 +10,7 @@ type lifecycleComponent struct {
 	cleanups []LifeCycleFunc
 	hooks    []Hook
 
+	contextClose func()
 	// Channel to close
 	exitChan chan (bool)
 }
@@ -32,6 +33,12 @@ func NewLifecycleComponent(startups []LifeCycleFunc, run LifeCycleFunc, cleanups
 	}
 }
 
+func (cc lifecycleComponent) WithCleanupFunctions(cleanups []LifeCycleFunc) lifecycleComponent {
+	c := cc
+	c.cleanups = append(c.cleanups, cleanups...)
+	return c
+}
+
 func (cc lifecycleComponent) WithHooks(hooks []Hook) lifecycleComponent {
 	c := cc
 	c.hooks = hooks
@@ -51,7 +58,10 @@ func (cc *lifecycleComponent) Startup() error {
 }
 
 func (cc *lifecycleComponent) Run() error {
-	ctx := context.TODO()
+	ctx, cancel := context.WithCancel(context.TODO())
+
+	cc.contextClose = cancel
+
 	if cc.run != nil {
 		err := cc.run(ctx)
 		if err != nil {
@@ -66,6 +76,9 @@ func (cc *lifecycleComponent) Run() error {
 }
 
 func (cc *lifecycleComponent) Close(ctx context.Context) error {
+	if cc.contextClose != nil {
+		cc.contextClose()
+	}
 	for _, cleanup := range cc.cleanups {
 		err := cleanup(ctx)
 		if err != nil {
